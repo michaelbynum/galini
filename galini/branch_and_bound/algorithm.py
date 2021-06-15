@@ -29,6 +29,7 @@ from galini.config import (
 )
 from galini.math import is_close
 from galini.quantities import relative_gap, absolute_gap
+from galini.io.logging import Logger
 
 
 class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
@@ -39,7 +40,7 @@ class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
         self._tree = None
         self._solution = None
         self._telemetry = galini.telemetry
-        self.logger = galini.get_logger(__name__)
+        self.logger: Logger = galini.get_logger(__name__)
 
     @staticmethod
     def bab_options():
@@ -161,6 +162,7 @@ class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
         return None
 
     def _bab_loop(self, model, **kwargs):
+        self.logger.log(25, f"{'Nodes Expl':12}{'Open Nodes':12}{'Lower Bnd':12}{'Upper Bnd':12}{'Rel Gap (%)':12}{'Abs Gap':12}{'Time (s)':12}")
         known_optimal_objective = kwargs.get('known_optimal_objective', None)
         if known_optimal_objective is not None:
             if not model._objective.is_originally_minimizing:
@@ -188,6 +190,10 @@ class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
                 delta_t, prev_elapsed_time = _compute_delta_t(self.galini, prev_elapsed_time)
                 update_at_end_of_iteration(self.galini, tree, delta_t)
                 return True
+
+        rel_gap = relative_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+        abs_gap = absolute_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+        self.logger.log(25, f"{tree.nodes_visited:<12}{len(tree.open_nodes):<12}{tree.lower_bound:<12.3e}{tree.upper_bound:<12.3e}{rel_gap*100:<12.3f}{abs_gap:<12.3e}{self.galini.timelimit.elapsed_time():<12.3}")
 
         self.logger.info('Solving root problem')
         with self._telemetry.timespan('branch_and_bound.solve_problem_at_root'):
@@ -222,6 +228,10 @@ class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
                 # This is the root node.
                 node_children, branching_point = tree.branch_at_node(current_node, mc)
                 self.logger.info('Branched at point {}', branching_point)
+                rel_gap = relative_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+                abs_gap = absolute_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+                self.logger.log(25, f"{tree.nodes_visited:<12}{len(tree.open_nodes):<12}{tree.lower_bound:<12.3e}{tree.upper_bound:<12.3e}{rel_gap*100:<12.5f}{abs_gap:<12.3e}{self.galini.timelimit.elapsed_time():<12.3}")
+
                 continue
 
             self.logger.info(
@@ -289,6 +299,10 @@ class BranchAndBoundAlgorithm(Algorithm, metaclass=abc.ABCMeta):
                 )
                 self.logger.log_prune_bab_node(current_node.coordinate)
                 tree.fathom_node(current_node, update_nodes_visited=False)
+
+            rel_gap = relative_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+            abs_gap = absolute_gap(tree.state.lower_bound, tree.state.upper_bound, self.galini.mc)
+            self.logger.log(25, f"{tree.nodes_visited:<12}{len(tree.open_nodes):<12}{tree.lower_bound:<12.3e}{tree.upper_bound:<12.3e}{rel_gap*100:<12.5f}{abs_gap:<12.3e}{self.galini.timelimit.elapsed_time():<12.3}")
 
             self.logger.info('New tree state at {}: {}', current_node.coordinate, tree.state)
             self.logger.update_variable('z_l', tree.nodes_visited, tree.lower_bound)
